@@ -102,11 +102,11 @@ class DiversityEnsembleClassifier:
         selected = [target_chromossome]
         diversity  = np.zeros(2*self.population_size)
         for i in range(0, self.population_size-1):
-            distances[target_chromossome] = float('-inf')
+            pop_fitness[target_chromossome] = 0
             d_i = np.logical_xor(predictions, predictions[target_chromossome]).sum(axis=1)
             distances += d_i
             diversity += d_i/predictions.shape[1]
-            target_chromossome = np.argmax(distances)
+            target_chromossome = np.argmax(pop_fitness)
             selected.append(target_chromossome)
             self.population[target_chromossome].fitness = pop_fitness[target_chromossome]
 
@@ -139,7 +139,7 @@ class DiversityEnsembleClassifier:
             predictions = self.fit_predict_population(not_selected, predictions, kf, X, y)
             print('done in',int(round(time.time() * 1000)) - aux, 'ms')
 
-            print('Applying diversity selection...', end='')
+            print('Applying fitness selection...', end='')
             aux = int(round(time.time() * 1000))
             selected, diversity = self.diversity_selection(predictions)
             print('done in',int(round(time.time() * 1000)) - aux, 'ms')

@@ -35,8 +35,8 @@ class Chromossome:
         return self.classifier.predict(X)
 
     def mutate(self, n_positions=None):
-        change_classifier = random.randint(0, len(self.genotypes_pool))
-        if True:#not self.classifier or change_classifier == 0:
+        change_classifier = random.randint(0, 1) #len(self.genotypes_pool))
+        if not self.classifier or change_classifier == 0:
             param = {}
             classifier_algorithm = random.choice(list(self.genotypes_pool.keys()))
         else:
@@ -100,6 +100,7 @@ class DiversityEnsembleClassifier:
         pop_fitness = predictions.sum(axis=1)
         target_chromossome = np.argmax(pop_fitness)
         selected = [target_chromossome]
+        self.population[target_chromossome].fitness = pop_fitness[target_chromossome]
         diversity  = np.zeros(2*self.population_size)
         for i in range(0, self.population_size-1):
             distances[target_chromossome] = float('-inf')
@@ -123,28 +124,28 @@ class DiversityEnsembleClassifier:
         predictions = np.empty([2*self.population_size, y.shape[0]])
 
         for epoch in range(self.max_epochs):
-            print('-' * 60)
-            print('Epoch', epoch)
-            print('-' * 60)
+            #print('-' * 60)
+            #print('Epoch', epoch)
+            #print('-' * 60)
 
             not_selected = np.setdiff1d([x for x in range(0, 2*self.population_size)], selected)
 
-            print('Generating offspring...', end='')
+            #print('Generating offspring...', end='')
             aux = int(round(time.time() * 1000))
             self.generate_offspring(selected, not_selected)
-            print('done in',int(round(time.time() * 1000)) - aux, 'ms')
+            #print('done in',int(round(time.time() * 1000)) - aux, 'ms')
 
-            print('Fitting and predicting population...', end='')
+            #print('Fitting and predicting population...', end='')
             aux = int(round(time.time() * 1000))
             predictions = self.fit_predict_population(not_selected, predictions, kf, X, y)
-            print('done in',int(round(time.time() * 1000)) - aux, 'ms')
+            #print('done in',int(round(time.time() * 1000)) - aux, 'ms')
 
-            print('Applying diversity selection...', end='')
+            #print('Applying diversity selection...', end='')
             aux = int(round(time.time() * 1000))
             selected, diversity = self.diversity_selection(predictions)
-            print('done in',int(round(time.time() * 1000)) - aux, 'ms')
+            #print('done in',int(round(time.time() * 1000)) - aux, 'ms')
             diversity_values.append(diversity)
-            print('New population diversity measure:', diversity)
+            #print('New population diversity measure:', diversity)
 
         #print('-' * 60, '\nFinished genetic algorithm in ', int(round(time.time() * 1000)) - start_time, 'ms')
 
@@ -167,3 +168,94 @@ class DiversityEnsembleClassifier:
                     pred[predictions[j][i]]  = self.population[j].fitness
             y[i] = max(pred.items(), key=operator.itemgetter(1))[0]
         return y
+
+class GeneticEnsembleClassifier:
+    def __init__(self, algorithms, population_size = 100, max_epochs = 100, random_state=None):
+        self.population_size = population_size
+        self.max_epochs = max_epochs
+        self.population = []
+        self.random_state = random_state
+        random.seed(self.random_state)
+        for i in range(0, population_size):
+            self.population.append(Chromossome(genotypes_pool=algorithms, random_state=random_state))
+
+    def generate_offspring(self, parents, children):
+        if not parents:
+            parents = [x for x in range(0, self.population_size)]
+            children = [x for x in range(self.population_size, 2*self.population_size)]
+        for i in range(0, self.population_size):
+            new_chromossome = copy.deepcopy(self.population[parents[i]])
+            new_chromossome.mutate(1)
+            try:
+                self.population[children[i]] = new_chromossome
+            except:
+                self.population.append(new_chromossome)
+
+    def fit_predict_population(self, not_fitted, predictions, kfolds, X, y):
+        for i in not_fitted:
+            chromossome = self.population[i]
+            for train, val in kfolds.split(X):
+                chromossome.fit(X[train], y[train])
+                predictions[i][val] = np.equal(chromossome.predict(X[val]), y[val])
+        return predictions
+
+    def fitness_selection(self, predictions):
+        pop_fitness = predictions.sum(axis=1)
+        target_chromossome = np.argmax(pop_fitness)
+        selected = [target_chromossome]
+        self.population[target_chromossome].fitness = pop_fitness[target_chromossome]
+        for i in range(0, self.population_size-1):
+            pop_fitness[target_chromossome] = -1
+            target_chromossome = np.argmax(pop_fitness)
+            selected.append(target_chromossome)
+            self.population[target_chromossome].fitness = pop_fitness[target_chromossome]
+
+        return selected
+
+    def fit(self, X, y):
+        diversity_values = []
+        kf = KFold(n_splits=5, random_state=self.random_state)
+        random.seed(self.random_state)
+
+        selected, not_selected = [], []
+        predictions = np.empty([2*self.population_size, y.shape[0]])
+
+        for epoch in range(self.max_epochs):
+            not_selected = np.setdiff1d([x for x in range(0, 2*self.population_size)], selected)
+
+            self.generate_offspring(selected, not_selected)
+
+            predictions = self.fit_predict_population(not_selected, predictions, kf, X, y)
+
+            selected = self.fitness_selection(predictions)
+
+        self.population = [self.population[x] for x in selected]
+        for chromossome in self.population:
+            chromossome.fit(X, y)
+
+    def predict(self, X):
+        predictions = np.empty((self.population_size, len(X)))
+        y = np.empty(len(X))
+        for chromossome in range(0, self.population_size):
+            predictions[chromossome] = self.population[chromossome].predict(X)
+        for i in range(0, len(X)):
+            pred = {}
+            for j in range(0, self.population_size):
+                if predictions[j][i] in pred:
+                    pred[predictions[j][i]] += self.population[j].fitness
+                else:
+                    pred[predictions[j][i]]  = self.population[j].fitness
+            y[i] = max(pred.items(), key=operator.itemgetter(1))[0]
+        return y
+
+class RandomClassifier:
+    def __init__(self, random_state=None):
+        self.random_state=random_state
+        self.classes = []
+
+    def fit(self, X, y):
+        self.classes = np.unique(y)
+
+    def predict(self, X):
+        np.random.seed(self.random_state)
+        return np.random.choice(self.classes, X.shape[0])
