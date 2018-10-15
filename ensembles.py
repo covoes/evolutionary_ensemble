@@ -97,24 +97,31 @@ class DiversityEnsembleClassifier:
 
     def diversity_selection(self, predictions):
         distances = np.zeros(2*self.population_size)
-        pop_fitness = predictions.sum(axis=1)
+        pop_fitness = predictions.sum(axis=1)/predictions.shape[1]
         target_chromossome = np.argmax(pop_fitness)
         selected = [target_chromossome]
         self.population[target_chromossome].fitness = pop_fitness[target_chromossome]
         diversity  = np.zeros(2*self.population_size)
+        mean_fitness = np.max(pop_fitness)
+        selected_fitness = 0
         for i in range(0, self.population_size-1):
-            distances[target_chromossome] = float('-inf')
-            d_i = np.logical_xor(predictions, predictions[target_chromossome]).sum(axis=1)
-            distances += d_i
-            diversity += d_i/predictions.shape[1]
-            target_chromossome = np.argmax(distances)
+            while selected_fitness < 0.5:
+                distances[target_chromossome] = float('-inf')
+                d_i = np.logical_xor(predictions, predictions[target_chromossome]).sum(axis=1)
+                distances += d_i
+                diversity += d_i/predictions.shape[1]
+                target_chromossome = np.argmax(distances)
+                selected_fitness = pop_fitness[target_chromossome]
+            mean_fitness += selected_fitness
+            #print(pop_fitness[target_chromossome])
             selected.append(target_chromossome)
             self.population[target_chromossome].fitness = pop_fitness[target_chromossome]
+            selected_fitness = 0
 
-        return selected, (diversity[selected]/(self.population_size-1)).mean()
+        return selected, (diversity[selected]/(self.population_size-1)).mean(), mean_fitness/(self.population_size)
 
     def fit(self, X, y):
-        diversity_values = []
+        diversity_values, fitness_values = [], []
         #print('Starting genetic algorithm...')
         kf = KFold(n_splits=5, random_state=self.random_state)
         start_time = int(round(time.time() * 1000))
@@ -142,9 +149,10 @@ class DiversityEnsembleClassifier:
 
             #print('Applying diversity selection...', end='')
             aux = int(round(time.time() * 1000))
-            selected, diversity = self.diversity_selection(predictions)
+            selected, diversity, fitness = self.diversity_selection(predictions)
             #print('done in',int(round(time.time() * 1000)) - aux, 'ms')
             diversity_values.append(diversity)
+            fitness_values.append(fitness)
             #print('New population diversity measure:', diversity)
 
         #print('-' * 60, '\nFinished genetic algorithm in ', int(round(time.time() * 1000)) - start_time, 'ms')
@@ -152,7 +160,7 @@ class DiversityEnsembleClassifier:
         self.population = [self.population[x] for x in selected]
         for chromossome in self.population:
             chromossome.fit(X, y)
-        return diversity_values
+        return [diversity_values, fitness_values]
 
     def predict(self, X):
         predictions = np.empty((self.population_size, len(X)))
