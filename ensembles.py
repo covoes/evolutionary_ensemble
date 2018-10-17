@@ -10,7 +10,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.model_selection import KFold
 import math
 import numpy as np
-import scipy.stats
+from scipy import stats
 import copy
 import random
 import operator
@@ -257,13 +257,23 @@ class GeneticEnsembleClassifier:
         return y
 
 class RandomClassifier:
-    def __init__(self, random_state=None):
+    def __init__(self, algorithms, random_state=None):
+        self.classifier = Chromossome(genotypes_pool=algorithms, random_state=random_state)
         self.random_state=random_state
-        self.classes = []
 
     def fit(self, X, y):
-        self.classes = np.unique(y)
+        self.classifier.fit(X, y)
 
     def predict(self, X):
-        np.random.seed(self.random_state)
-        return np.random.choice(self.classes, X.shape[0])
+        return self.classifier.predict(X)
+
+
+class MajorityClassifier:
+    def __init__(self):
+        self.majority = None
+
+    def fit(X, y):
+        self.majority = stats.mode(y)[0][0]
+
+    def predict(self, X):
+        return np.full(X.shape[0], self.majority)
