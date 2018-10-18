@@ -70,6 +70,7 @@ class DiversityEnsembleClassifier:
         self.population_size = population_size
         self.max_epochs = max_epochs
         self.population = []
+        self.algorithms = algorithms
         self.random_state = random_state
         random.seed(self.random_state)
         for i in range(0, population_size):
@@ -80,7 +81,7 @@ class DiversityEnsembleClassifier:
             parents = [x for x in range(0, self.population_size)]
             children = [x for x in range(self.population_size, 2*self.population_size)]
         for i in range(0, self.population_size):
-            new_chromossome = copy.deepcopy(self.population[parents[i]])
+            new_chromossome = copy.deepcopy(self.population[parents[i%len(parents)]])
             new_chromossome.mutate(1)
             try:
                 self.population[children[i]] = new_chromossome
@@ -90,28 +91,35 @@ class DiversityEnsembleClassifier:
     def fit_predict_population(self, not_fitted, predictions, kfolds, X, y):
         for i in not_fitted:
             chromossome = self.population[i]
+            #print (i, chromossome.classifier.__class__, end=' ')
             for train, val in kfolds.split(X):
                 chromossome.fit(X[train], y[train])
                 predictions[i][val] = np.equal(chromossome.predict(X[val]), y[val])
         return predictions
 
     def diversity_selection(self, predictions):
+        print(-1)
         distances = np.zeros(2*self.population_size)
         pop_fitness = predictions.sum(axis=1)/predictions.shape[1]
         target_chromossome = np.argmax(pop_fitness)
         selected = [target_chromossome]
         self.population[target_chromossome].fitness = pop_fitness[target_chromossome]
         diversity  = np.zeros(2*self.population_size)
-        mean_fitness = np.max(pop_fitness)
+        mean_fitness = pop_fitness[target_chromossome]
         selected_fitness = 0
+        distances[pop_fitness < 0.5] = float('-inf')
+        print(distances)
         for i in range(0, self.population_size-1):
-            while selected_fitness < 0.5:
-                distances[target_chromossome] = float('-inf')
-                d_i = np.logical_xor(predictions, predictions[target_chromossome]).sum(axis=1)
-                distances += d_i
-                diversity += d_i/predictions.shape[1]
-                target_chromossome = np.argmax(distances)
-                selected_fitness = pop_fitness[target_chromossome]
+            print(i)
+            print('.' ,end='')
+            distances[target_chromossome] = float('-inf')
+            d_i = np.logical_xor(predictions, predictions[target_chromossome]).sum(axis=1)
+            distances += d_i
+            diversity += d_i/predictions.shape[1]
+            target_chromossome = np.argmax(distances)
+            if distances[target_chromossome] == float('-inf'):
+                break
+            selected_fitness = pop_fitness[target_chromossome]
             mean_fitness += selected_fitness
             #print(pop_fitness[target_chromossome])
             selected.append(target_chromossome)
@@ -131,31 +139,31 @@ class DiversityEnsembleClassifier:
         predictions = np.empty([2*self.population_size, y.shape[0]])
 
         for epoch in range(self.max_epochs):
-            #print('-' * 60)
-            #print('Epoch', epoch)
-            #print('-' * 60)
+            print('-' * 60)
+            print('Epoch', epoch)
+            print('-' * 60)
 
             not_selected = np.setdiff1d([x for x in range(0, 2*self.population_size)], selected)
 
-            #print('Generating offspring...', end='')
+            print('Generating offspring...', end='')
             aux = int(round(time.time() * 1000))
             self.generate_offspring(selected, not_selected)
-            #print('done in',int(round(time.time() * 1000)) - aux, 'ms')
+            print('done in',int(round(time.time() * 1000)) - aux, 'ms')
 
-            #print('Fitting and predicting population...', end='')
+            print('Fitting and predicting population...', end='')
             aux = int(round(time.time() * 1000))
             predictions = self.fit_predict_population(not_selected, predictions, kf, X, y)
-            #print('done in',int(round(time.time() * 1000)) - aux, 'ms')
+            print('done in',int(round(time.time() * 1000)) - aux, 'ms')
 
-            #print('Applying diversity selection...', end='')
+            print('Applying diversity selection...', end='')
             aux = int(round(time.time() * 1000))
             selected, diversity, fitness = self.diversity_selection(predictions)
-            #print('done in',int(round(time.time() * 1000)) - aux, 'ms')
+            print('done in',int(round(time.time() * 1000)) - aux, 'ms')
             diversity_values.append(diversity)
             fitness_values.append(fitness)
-            #print('New population diversity measure:', diversity)
+            print('New population diversity measure:', diversity)
 
-        #print('-' * 60, '\nFinished genetic algorithm in ', int(round(time.time() * 1000)) - start_time, 'ms')
+        print('-' * 60, '\nFinished genetic algorithm in ', int(round(time.time() * 1000)) - start_time, 'ms')
 
         self.population = [self.population[x] for x in selected]
         for chromossome in self.population:
