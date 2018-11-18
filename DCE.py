@@ -65,7 +65,7 @@ class Chromossome:
         except:
             pass
 
-class DiversityEnsembleClassifier:
+class DiversityClassifierEnsemble:
     def __init__(self, algorithms, population_size = 100, max_epochs = 100, random_state=None):
         self.population_size = population_size
         self.max_epochs = max_epochs
@@ -91,14 +91,12 @@ class DiversityEnsembleClassifier:
     def fit_predict_population(self, not_fitted, predictions, kfolds, X, y):
         for i in not_fitted:
             chromossome = self.population[i]
-            ##print (i, chromossome.classifier.__class__, end=' ')
             for train, val in kfolds.split(X):
                 chromossome.fit(X[train], y[train])
                 predictions[i][val] = np.equal(chromossome.predict(X[val]), y[val])
         return predictions
 
     def diversity_selection(self, predictions, selection_threshold):
-        #print(-1)
         distances = np.zeros(2*self.population_size)
         pop_fitness = predictions.sum(axis=1)/predictions.shape[1]
         target_chromossome = np.argmax(pop_fitness)
@@ -107,10 +105,7 @@ class DiversityEnsembleClassifier:
         diversity  = np.zeros(2*self.population_size)
         mean_fitness = pop_fitness[target_chromossome]
         distances[pop_fitness < selection_threshold] = float('-inf')
-        #print(distances)
         for i in range(0, self.population_size-1):
-            #print(i)
-            #print('.' ,end='')
             distances[target_chromossome] = float('-inf')
             d_i = np.logical_xor(predictions, predictions[target_chromossome]).sum(axis=1)
             distances += d_i
@@ -119,7 +114,6 @@ class DiversityEnsembleClassifier:
                 break
             diversity += d_i/predictions.shape[1]
             mean_fitness += pop_fitness[target_chromossome]
-            ##print(pop_fitness[target_chromossome])
             selected.append(target_chromossome)
             self.population[target_chromossome].fitness = pop_fitness[target_chromossome]
 
@@ -183,104 +177,3 @@ class DiversityEnsembleClassifier:
                     pred[predictions[j][i]]  = self.population[j].fitness
             y[i] = max(pred.items(), key=operator.itemgetter(1))[0]
         return y
-
-class GeneticEnsembleClassifier:
-    def __init__(self, algorithms, population_size = 100, max_epochs = 100, random_state=None):
-        self.population_size = population_size
-        self.max_epochs = max_epochs
-        self.population = []
-        self.random_state = random_state
-        random.seed(self.random_state)
-        for i in range(0, population_size):
-            self.population.append(Chromossome(genotypes_pool=algorithms, random_state=random_state))
-
-    def generate_offspring(self, parents, children):
-        if not parents:
-            parents = [x for x in range(0, self.population_size)]
-            children = [x for x in range(self.population_size, 2*self.population_size)]
-        for i in range(0, self.population_size):
-            new_chromossome = copy.deepcopy(self.population[parents[i]])
-            new_chromossome.mutate(1)
-            try:
-                self.population[children[i]] = new_chromossome
-            except:
-                self.population.append(new_chromossome)
-
-    def fit_predict_population(self, not_fitted, predictions, kfolds, X, y):
-        for i in not_fitted:
-            chromossome = self.population[i]
-            for train, val in kfolds.split(X):
-                chromossome.fit(X[train], y[train])
-                predictions[i][val] = np.equal(chromossome.predict(X[val]), y[val])
-        return predictions
-
-    def fitness_selection(self, predictions):
-        pop_fitness = predictions.sum(axis=1)
-        target_chromossome = np.argmax(pop_fitness)
-        selected = [target_chromossome]
-        self.population[target_chromossome].fitness = pop_fitness[target_chromossome]
-        for i in range(0, self.population_size-1):
-            pop_fitness[target_chromossome] = -1
-            target_chromossome = np.argmax(pop_fitness)
-            selected.append(target_chromossome)
-            self.population[target_chromossome].fitness = pop_fitness[target_chromossome]
-
-        return selected
-
-    def fit(self, X, y):
-        diversity_values = []
-        kf = KFold(n_splits=5, random_state=self.random_state)
-        random.seed(self.random_state)
-
-        selected, not_selected = [], []
-        predictions = np.empty([2*self.population_size, y.shape[0]])
-
-        for epoch in range(self.max_epochs):
-            not_selected = np.setdiff1d([x for x in range(0, 2*self.population_size)], selected)
-
-            self.generate_offspring(selected, not_selected)
-
-            predictions = self.fit_predict_population(not_selected, predictions, kf, X, y)
-
-            selected = self.fitness_selection(predictions)
-
-        self.population = [self.population[x] for x in selected]
-        for chromossome in self.population:
-            chromossome.fit(X, y)
-
-    def predict(self, X):
-        predictions = np.empty((self.population_size, len(X)))
-        y = np.empty(len(X))
-        for chromossome in range(0, self.population_size):
-            predictions[chromossome] = self.population[chromossome].predict(X)
-        for i in range(0, len(X)):
-            pred = {}
-            for j in range(0, self.population_size):
-                if predictions[j][i] in pred:
-                    pred[predictions[j][i]] += self.population[j].fitness
-                else:
-                    pred[predictions[j][i]]  = self.population[j].fitness
-            y[i] = max(pred.items(), key=operator.itemgetter(1))[0]
-        return y
-
-class RandomClassifier:
-    def __init__(self, algorithms, random_state=None):
-        self.classifier = Chromossome(genotypes_pool=algorithms, random_state=random_state)
-        self.random_state=random_state
-
-    def fit(self, X, y):
-        self.classifier.fit(X, y)
-
-    def predict(self, X):
-        return self.classifier.predict(X)
-
-
-class MajorityClassifier:
-    def __init__(self):
-        self.majority = None
-
-    def fit(self, X, y):
-        self.majority = stats.mode(y)[0][0]
-
-    def predict(self, X):
-        return np.full(X.shape[0], self.majority)
